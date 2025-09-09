@@ -1,0 +1,39 @@
+
+CREATE TABLE employees (
+    first_name VARCHAR(50),
+    last_name VARCHAR(50),
+    department VARCHAR(50),
+    hire_date DATE,
+    salary INT
+);
+
+ 
+INSERT INTO employees (first_name, last_name, department, hire_date, salary) VALUES
+('Ramesh', 'Rao', 'Sales', '2022-05-10', 75000),
+('Lakshmi', 'Devi', 'Marketing', '2023-02-18', 60000),
+('Suresh', 'Kumar', 'Sales', '2021-09-03', 58000),
+('Anjali', 'Reddy', 'Marketing', '2023-07-25', 55000),
+('Pradeep', 'Babu', 'Sales', '2022-04-30', 45000),
+('Vijaya', 'Rao', 'HR', '2020-03-15', 40000),
+('Naveen', 'Kumar', 'Sales', '2023-01-20', 52000),
+('Sita', 'Devi', 'Marketing', '2022-11-10', 48000),
+('Harsha', 'Reddy', 'Finance', '2021-08-05', 65000),
+('Chandra', 'Babu', 'Sales', '2023-06-12', 47000);
+
+SELECT first_name AS Name, last_name AS Surname, department, hire_date, salary
+FROM employees
+WHERE department = 'Marketing'
+  AND hire_date BETWEEN '2023-01-01' AND '2023-12-31'
+  AND last_name LIKE 'D%'
+ORDER BY hire_date ASC;
+
+
+SELECT
+    COUNT(*) AS total_filtered,
+    MIN(salary) AS min_salary,
+    MAX(hire_date) AS latest_hire
+FROM employees
+WHERE
+    department = 'Marketing'
+    AND hire_date BETWEEN '2023-01-01' AND '2023-12-31'
+    AND last_name LIKE 'D%';
