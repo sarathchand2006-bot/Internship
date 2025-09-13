@@ -1,0 +1,113 @@
+-- Create Departments Table
+CREATE TABLE dbo.departments (
+    dept_no CHAR(4) PRIMARY KEY,
+    dept_name VARCHAR(50)
+);
+
+-- Create Employees Table
+CREATE TABLE dbo.employees (
+    emp_no INT PRIMARY KEY,
+    first_name VARCHAR(50),
+    last_name VARCHAR(50),
+    gender CHAR(1),
+    hire_date DATE
+);
+
+-- Create Dept_Emp Table
+CREATE TABLE dbo.dept_emp (
+    emp_no INT,
+    dept_no CHAR(4),
+    from_date DATE,
+    to_date DATE
+);
+
+-- Create Salaries Table
+CREATE TABLE dbo.salaries (
+    emp_no INT,
+    salary INT,
+    from_date DATE,
+    to_date DATE
+);
+-- Insert Departments
+INSERT INTO dbo.departments VALUES ('d001', 'Sales'), ('d002', 'Finance'), ('d003', 'HR');
+
+-- Insert Employees
+INSERT INTO dbo.employees VALUES
+(1001, 'Alice', 'Smith', 'F', '1986-03-15'),
+(1002, 'Bob', 'Johnson', 'M', '1988-07-20'),
+(1003, 'Charlie', 'Lee', 'M', '1990-11-05');
+
+-- Insert Dept_Emp Assignments
+INSERT INTO dbo.dept_emp VALUES
+(1001, 'd001', '1986-03-15', '9999-01-01'),
+(1002, 'd002', '1988-07-20', '9999-01-01'),
+(1003, 'd001', '1990-11-05', '9999-01-01');
+
+-- Insert Salaries
+INSERT INTO dbo.salaries VALUES
+(1001, 75000, '1986-03-15', '9999-01-01'),
+(1002, 85000, '1988-07-20', '9999-01-01'),
+(1003, 65000, '1990-11-05', '9999-01-01');
+SELECT
+    d.dept_name AS Department,
+    COUNT(DISTINCT e.emp_no) AS Employees,
+    ROUND(AVG(s.salary), 2) AS Avg_Salary,
+    MIN(s.salary) AS Min_Salary,
+    MAX(s.salary) AS Max_Salary,
+    (MAX(s.salary) - MIN(s.salary)) AS Salary_Range
+FROM dbo.departments d
+JOIN dbo.dept_emp de ON d.dept_no = de.dept_no
+JOIN dbo.employees e ON de.emp_no = e.emp_no
+JOIN dbo.salaries s ON e.emp_no = s.emp_no
+WHERE de.to_date > GETDATE()
+  AND s.to_date > GETDATE()
+GROUP BY d.dept_name
+ORDER BY Avg_Salary DESC;
+SELECT
+    YEAR(e.hire_date) AS Hire_Year,
+    COUNT(*) AS New_Hires,
+    COUNT(*) - LAG(COUNT(*)) OVER (ORDER BY YEAR(e.hire_date)) AS YoY_Change,
+    CONCAT(
+        ROUND(
+            100.0 * (COUNT(*) - LAG(COUNT(*)) OVER (ORDER BY YEAR(e.hire_date))) / NULLIF(LAG(COUNT(*)) OVER (ORDER BY YEAR(e.hire_date)), 0),
+            1
+        ),
+        '%'
+    ) AS Growth_Rate
+FROM dbo.employees e
+GROUP BY YEAR(e.hire_date)
+ORDER BY YEAR(e.hire_date);
+SELECT
+    d.dept_name,
+    ROUND(AVG(s.salary), 0) AS avg_salary,
+    COUNT(DISTINCT de.emp_no) AS employees
+FROM dbo.departments d
+JOIN dbo.dept_emp de ON d.dept_no = de.dept_no
+JOIN dbo.salaries s ON de.emp_no = s.emp_no
+WHERE s.to_date > GETDATE()
+GROUP BY d.dept_name
+HAVING AVG(s.salary) > 70000;
+SELECT
+    d.dept_name,
+    FLOOR(s.salary / 10000) * 10000 AS Salary_Bucket,
+    COUNT(*) AS Employees,
+    CONCAT(
+        ROUND(
+            100.0 * COUNT(*) / NULLIF(SUM(COUNT(*)) OVER (PARTITION BY d.dept_name), 0),
+            1
+        ),
+        '%'
+    ) AS Distribution
+FROM dbo.departments d
+JOIN dbo.dept_emp de ON d.dept_no = de.dept_no
+JOIN dbo.salaries s ON de.emp_no = s.emp_no
+WHERE s.to_date > GETDATE()
+  AND d.dept_name = 'Sales'
+GROUP BY d.dept_name, FLOOR(s.salary / 10000) * 10000
+ORDER BY Salary_Bucket;
+SELECT COUNT(DISTINCT emp_no) AS total_current_employees
+FROM dbo.salaries
+WHERE to_date > GETDATE();
+SELECT COUNT(*) AS null_dept_assignments
+FROM dbo.dept_emp
+WHERE dept_no IS NULL;
