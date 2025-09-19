@@ -1,0 +1,440 @@
+------------------------------------------------------------
+-- TASK 4: Data Modification & Integrity (Single-stretch T-SQL)
+-- Safe to run in Microsoft One Compiler / SQL Server
+------------------------------------------------------------
+
+SET NOCOUNT ON;
+
+-- Clean up if previously created
+IF OBJECT_ID('dbo.salary_sandbox', 'U') IS NOT NULL DROP TABLE dbo.salary_sandbox;
+IF OBJECT_ID('dbo.employee_sandbox', 'U') IS NOT NULL DROP TABLE dbo.employee_sandbox;
+IF OBJECT_ID('dbo.pre_update_snapshot', 'U') IS NOT NULL DROP TABLE dbo.pre_update_snapshot;
+IF OBJECT_ID('dbo.deletion_audit', 'U') IS NOT NULL DROP TABLE dbo.deletion_audit;
+
+----------------------------------------------------------------
+-- 1) Create sandbox tables (expanded schema for practice)
+----------------------------------------------------------------
+
+CREATE TABLE dbo.employee_sandbox (
+    emp_no INT PRIMARY KEY,
+    birth_date DATE NULL,
+    first_name VARCHAR(100) NOT NULL,
+    last_name VARCHAR(100) NOT NULL,
+    gender CHAR(1) NULL, -- 'M' or 'F'
+    hire_date DATE NULL,
+    email VARCHAR(255) NULL -- will add unique constraint later
+);
+
+CREATE TABLE dbo.salary_sandbox (
+    emp_no INT NOT NULL,
+    from_date DATE NOT NULL,
+    to_date DATE NULL,
+    salary INT NULL,
+    CONSTRAINT PK_salary_sandbox PRIMARY KEY (emp_no, from_date)
+    -- FK added later after we populate employee_sandbox to avoid immediate failures
+);
+
+----------------------------------------------------------------
+-- 2) Seed employee_sandbox from existing employees (if present)
+--    If no employees table exists in this DB, we'll insert a minimal set.
+----------------------------------------------------------------
+
+IF OBJECT_ID('dbo.employees', 'U') IS NOT NULL
+BEGIN
+    -- Try to copy basic rows; map missing columns with defaults
+    INSERT INTO dbo.employee_sandbox (emp_no, birth_date, first_name, last_name, gender, hire_date)
+    SELECT e.emp_no,
+           ISNULL(e.birth_date, '1990-01-01'),
+           e.first_name,
+           e.last_name,
+           CASE 
+             WHEN e.first_name IN ('Priya','Meera') THEN 'F' 
+             ELSE 'M' END,
+           ISNULL(e.hire_date, '2018-01-01')
+    FROM dbo.employees e;
+END
+ELSE
+BEGIN
+    -- Insert small default dataset (Indian names)
+    INSERT INTO dbo.employee_sandbox (emp_no, birth_date, first_name, last_name, gender, hire_date)
+    VALUES
+      (10001, '1992-02-14', 'Arjun', 'Sharma', 'M', '2020-01-01'),
+      (10002, '1993-03-05', 'Priya', 'Iyer', 'F', '2019-01-01'),
+      (10003, '1991-06-11', 'Ravi', 'Patel', 'M', '2021-05-01'),
+      (10004, '1989-08-22', 'Meera', 'Nair', 'F', '2018-05-01'),
+      (10005, '1990-12-03', 'Karthik', 'Reddy', 'M', '2017-03-01');
+END
+
+----------------------------------------------------------------
+-- 3) Add FK from salary_sandbox -> employee_sandbox (safe now)
+----------------------------------------------------------------
+ALTER TABLE dbo.salary_sandbox
+ADD CONSTRAINT FK_salary_sandbox_emp
+FOREIGN KEY (emp_no) REFERENCES dbo.employee_sandbox(emp_no);
+
+----------------------------------------------------------------
+-- 4) Seed salary_sandbox with current data for existing employees
+----------------------------------------------------------------
+INSERT INTO dbo.salary_sandbox (emp_no, from_date, to_date, salary)
+VALUES
+ (10001, '2020-01-01', '9999-01-01', 90000),
+ (10002, '2019-01-01', '9999-01-01', 75000),
+ (10003, '2021-05-01', '9999-01-01', 60000);
+
+-- Safe: check counts
+PRINT 'Initial employee_sandbox rows:';
+SELECT COUNT(*) AS employee_sandbox_count FROM dbo.employee_sandbox;
+PRINT 'Initial salary_sandbox rows:';
+SELECT COUNT(*) AS salary_sandbox_count FROM dbo.salary_sandbox;
+
+----------------------------------------------------------------
+-- HANDS-ON EXERCISES (INSERT / UPDATE / DELETE / VERIFY)
+----------------------------------------------------------------
+
+PRINT '--- EXERCISE 1: INSERT new employees (single + bulk) ---';
+
+-- Single record insert (Indian names)
+BEGIN TRY
+    INSERT INTO dbo.employee_sandbox (emp_no, birth_date, first_name, last_name, gender, hire_date)
+    VALUES (500001, '1995-08-14', 'Asha', 'Kumar', 'F', '2023-06-01');
+    PRINT 'Inserted 500001 (Asha Kumar)';
+END TRY
+BEGIN CATCH
+    PRINT 'Insert failed for 500001: ' + ERROR_MESSAGE();
+END CATCH;
+
+-- Bulk insert (two records)
+BEGIN TRY
+    INSERT INTO dbo.employee_sandbox (emp_no, birth_date, first_name, last_name, gender, hire_date)
+    VALUES
+      (500002, '1990-11-03', 'Vikram', 'Shah', 'M', '2023-06-01'),
+      (500003, '1988-04-22', 'Sneha', 'Bose', 'F', '2023-06-01');
+    PRINT 'Bulk insert 500002,500003 succeeded';
+END TRY
+BEGIN CATCH
+    PRINT 'Bulk insert failed: ' + ERROR_MESSAGE();
+END CATCH;
+
+-- Verify new rows
+SELECT emp_no, first_name, last_name, hire_date
+FROM dbo.employee_sandbox
+WHERE emp_no >= 500000
+ORDER BY emp_no;
+
+----------------------------------------------------------------
+-- EXERCISE 2: UPDATE existing records (safe updates)
+----------------------------------------------------------------
+PRINT '--- EXERCISE 2: UPDATE operations ---';
+
+-- 1) Correct name spelling (example) - change Sneha -> SnehA? we'll change to 'Sonia' as demonstration
+BEGIN TRY
+    UPDATE dbo.employee_sandbox
+    SET first_name = 'Sonia'
+    WHERE emp_no = 500003;
+    PRINT 'Updated emp_no 500003 first_name -> Sonia';
+END TRY
+BEGIN CATCH
+    PRINT 'Update failed for 500003: ' + ERROR_MESSAGE();
+END CATCH;
+
+-- 2) Department transfer simulation: since dept_emp may not exist in this DB, we simulate by changing hire_date for Arjun (10001)
+BEGIN TRY
+    UPDATE dbo.employee_sandbox
+    SET hire_date = '2023-07-15'
+    WHERE first_name = 'Arjun' AND last_name = 'Sharma';
+    PRINT 'Simulated transfer (updated hire_date for Arjun Sharma)';
+END TRY
+BEGIN CATCH
+    PRINT 'Simulated transfer failed: ' + ERROR_MESSAGE();
+END CATCH;
+
+-- Verify updates
+SELECT emp_no, first_name, last_name, hire_date
+FROM dbo.employee_sandbox
+WHERE emp_no IN (10001, 500003)
+ORDER BY emp_no;
+
+----------------------------------------------------------------
+-- EXERCISE 3: DELETE test records (safe, controlled)
+----------------------------------------------------------------
+PRINT '--- EXERCISE 3: DELETE operations ---';
+
+-- Delete test records inserted with hire_date = '2023-06-01' and emp_no > 500000
+BEGIN TRY
+    DELETE FROM dbo.employee_sandbox
+    WHERE hire_date = '2023-06-01' AND emp_no > 500000;
+    PRINT 'Deleted test records with hire_date=2023-06-01 and emp_no>500000';
+END TRY
+BEGIN CATCH
+    PRINT 'Delete failed: ' + ERROR_MESSAGE();
+END CATCH;
+
+-- Verify deletion
+SELECT COUNT(*) AS remaining_test_records
+FROM dbo.employee_sandbox
+WHERE emp_no > 500000;
+
+----------------------------------------------------------------
+-- CONSTRAINT ENFORCEMENT: Attempt duplicate PK (handled)
+----------------------------------------------------------------
+PRINT '--- CONSTRAINT: Primary Key Violation Demo (handled) ---';
+BEGIN TRY
+    INSERT INTO dbo.employee_sandbox (emp_no, birth_date, first_name, last_name, gender, hire_date)
+    VALUES (10001, '1953-09-02', 'John', 'Doe', 'M', '1986-06-26');
+    PRINT 'Duplicate insert succeeded (unexpected)';
+END TRY
+BEGIN CATCH
+    PRINT 'Expected PK violation error (caught): ' + ERROR_MESSAGE();
+END CATCH;
+
+----------------------------------------------------------------
+-- FOREIGN KEY ENFORCEMENT: Attempt invalid insert into salary_sandbox
+----------------------------------------------------------------
+PRINT '--- CONSTRAINT: FK Violation Demo (handled) ---';
+BEGIN TRY
+    INSERT INTO dbo.salary_sandbox (emp_no, from_date, to_date, salary)
+    VALUES (999999, '2023-01-01', '9999-01-01', 80000);
+    PRINT 'Invalid salary insert unexpectedly succeeded';
+END TRY
+BEGIN CATCH
+    PRINT 'Expected FK violation (caught): ' + ERROR_MESSAGE();
+END CATCH;
+
+----------------------------------------------------------------
+-- TRANSACTION CONTROL: Atomic Update Example (then ROLLBACK)
+----------------------------------------------------------------
+PRINT '--- TRANSACTION: Atomic update then ROLLBACK ---';
+BEGIN TRY
+    BEGIN TRANSACTION tx_atomic;
+
+    UPDATE dbo.employee_sandbox
+    SET first_name = 'Alexander'
+    WHERE emp_no = 10002;
+
+    INSERT INTO dbo.salary_sandbox (emp_no, from_date, to_date, salary)
+    VALUES (10002, CAST(GETDATE() AS DATE), '9999-01-01', 76000);
+
+    -- Verify inside transaction (select will see uncommitted changes in same session)
+    PRINT 'Inside transaction - preview changes for emp_no 10002:';
+    SELECT e.emp_no, e.first_name, s.salary
+    FROM dbo.employee_sandbox e
+    LEFT JOIN dbo.salary_sandbox s ON e.emp_no = s.emp_no
+    WHERE e.emp_no = 10002;
+
+    -- Undo changes
+    ROLLBACK TRANSACTION tx_atomic;
+    PRINT 'Rolled back tx_atomic';
+END TRY
+BEGIN CATCH
+    PRINT 'Transaction failed: ' + ERROR_MESSAGE();
+    ROLLBACK;
+END CATCH;
+
+-- Verify rollback result
+SELECT emp_no, first_name FROM dbo.employee_sandbox WHERE emp_no = 10002;
+
+----------------------------------------------------------------
+-- SAVEPOINTS: Use SAVE TRANSACTION and rollback to it
+----------------------------------------------------------------
+PRINT '--- SAVEPOINT Demo ---';
+BEGIN TRY
+    BEGIN TRANSACTION tx_save;
+    -- initial update
+    UPDATE dbo.employee_sandbox
+    SET hire_date = '2023-01-01'
+    WHERE emp_no = 10003;
+    PRINT 'Updated hire_date for emp_no 10003';
+
+    -- savepoint
+    SAVE TRANSACTION sp1;
+
+    -- risky operation: delete names starting with 'A' (none in current dataset except maybe none)
+    DELETE FROM dbo.employee_sandbox WHERE first_name LIKE 'A%';
+    PRINT 'Performed risky DELETE (first_name LIKE ''A%'')';
+
+    -- Now revert to savepoint sp1
+    ROLLBACK TRANSACTION sp1;
+    PRINT 'Rolled back to savepoint sp1 (undo risky DELETE)';
+
+    COMMIT TRANSACTION tx_save;
+    PRINT 'Committed tx_save (hire_date change saved)';
+END TRY
+BEGIN CATCH
+    PRINT 'Savepoint/Transaction failed: ' + ERROR_MESSAGE();
+    ROLLBACK;
+END CATCH;
+
+-- Verify hire_date change persisted
+SELECT emp_no, first_name, hire_date FROM dbo.employee_sandbox WHERE emp_no = 10003;
+
+----------------------------------------------------------------
+-- DATA VALIDATION FRAMEWORK: Pre/Post Change Checks (snapshot)
+----------------------------------------------------------------
+PRINT '--- DATA VALIDATION: pre/post snapshot and counts ---';
+-- Pre-update snapshot (small)
+IF OBJECT_ID('dbo.pre_update_snapshot','U') IS NOT NULL DROP TABLE dbo.pre_update_snapshot;
+SELECT * INTO dbo.pre_update_snapshot FROM dbo.employee_sandbox;
+
+-- Simulate a bulk small change: update last_name for emp_no 10005
+UPDATE dbo.employee_sandbox SET last_name = 'Reddy-Verified' WHERE emp_no = 10005;
+
+-- Compare counts
+SELECT
+  (SELECT COUNT(*) FROM dbo.pre_update_snapshot) AS old_count,
+  (SELECT COUNT(*) FROM dbo.employee_sandbox) AS new_count,
+  (SELECT COUNT(*) FROM dbo.pre_update_snapshot) - (SELECT COUNT(*) FROM dbo.employee_sandbox) AS delta;
+
+----------------------------------------------------------------
+-- CONSTRAINT MANAGEMENT: Add unique email constraint, test violation safely
+----------------------------------------------------------------
+PRINT '--- CONSTRAINT MANAGEMENT: unique email demo ---';
+-- Add email values for some rows
+UPDATE dbo.employee_sandbox SET email = CONCAT(first_name, '.', last_name, '@example.com');
+
+-- Add unique constraint
+ALTER TABLE dbo.employee_sandbox
+ADD CONSTRAINT UC_employee_email UNIQUE (email);
+
+-- Attempt to set same email for two rows to show violation (handled)
+BEGIN TRY
+    UPDATE dbo.employee_sandbox SET email = 'duplicate@example.com' WHERE emp_no = 10001;
+    UPDATE dbo.employee_sandbox SET email = 'duplicate@example.com' WHERE emp_no = 10002;
+    PRINT 'Duplicate email updates succeeded (unexpected)';
+END TRY
+BEGIN CATCH
+    PRINT 'Expected UNIQUE violation (caught): ' + ERROR_MESSAGE();
+    -- Restore distinct emails to keep dataset consistent
+    UPDATE dbo.employee_sandbox SET email = CONCAT(first_name, '.', last_name, '@example.com') WHERE emp_no IN (10001,10002);
+END CATCH;
+
+----------------------------------------------------------------
+-- TEMPORARY CONSTRAINT REMOVAL & BULK LOAD SIMULATION
+-- (We will demonstrate dropping FK, pretend bulk load, re-add FK with ON DELETE CASCADE)
+----------------------------------------------------------------
+PRINT '--- TEMP: Drop FK, simulate bulk load, re-add FK with ON DELETE CASCADE ---';
+
+-- Drop FK (if exists)
+IF EXISTS (SELECT 1 FROM sys.foreign_keys WHERE name = 'FK_salary_sandbox_emp')
+BEGIN
+    ALTER TABLE dbo.salary_sandbox DROP CONSTRAINT FK_salary_sandbox_emp;
+    PRINT 'Dropped FK FK_salary_sandbox_emp';
+END
+
+-- Simulate bulk load: insert a historical salary for emp_no 10005
+INSERT INTO dbo.salary_sandbox (emp_no, from_date, to_date, salary)
+VALUES (10005, '2017-03-01', '2021-03-01', 45000);
+PRINT 'Simulated bulk load (one historical salary)';
+
+-- Re-create FK with ON DELETE CASCADE
+ALTER TABLE dbo.salary_sandbox
+ADD CONSTRAINT FK_salary_sandbox_emp
+FOREIGN KEY (emp_no) REFERENCES dbo.employee_sandbox(emp_no) ON DELETE CASCADE;
+PRINT 'Re-added FK with ON DELETE CASCADE';
+
+----------------------------------------------------------------
+-- REAL-WORLD SCENARIO 1: Department Consolidation (simulated)
+-- Note: we may not have real dept_emp table here; we perform a safe simulated operation:
+----------------------------------------------------------------
+PRINT '--- REAL-WORLD SCENARIO 1: Department Consolidation (simulated) ---';
+-- We'll create a safe dept_emp_small table for demo if not present
+IF OBJECT_ID('dbo.dept_emp_small','U') IS NOT NULL DROP TABLE dbo.dept_emp_small;
+CREATE TABLE dbo.dept_emp_small (
+    emp_no INT,
+    dept_no CHAR(4),
+    from_date DATE,
+    to_date DATE
+);
+
+-- Seed dept_emp_small
+INSERT INTO dbo.dept_emp_small VALUES
+ (10002, 'd007', '2015-01-01', '9999-01-01'), -- Human Resources (simulate)
+ (10005, 'd007', '2016-02-01', '9999-01-01');
+
+-- Simulate moving HR -> People Ops (create target dept 'd010' if not exist)
+IF OBJECT_ID('dbo.departments', 'U') IS NULL
+BEGIN
+    CREATE TABLE dbo.departments (dept_no CHAR(4) PRIMARY KEY, dept_name VARCHAR(100));
+    INSERT INTO dbo.departments VALUES ('d007','Human Resources'),('d010','People Ops');
+END
+ELSE
+BEGIN
+    -- ensure target dept exists
+    IF NOT EXISTS (SELECT 1 FROM dbo.departments WHERE dept_name = 'People Ops')
+        INSERT INTO dbo.departments (dept_no, dept_name) VALUES ('d010','People Ops');
+
+    IF NOT EXISTS (SELECT 1 FROM dbo.departments WHERE dept_name = 'Human Resources')
+        INSERT INTO dbo.departments (dept_no, dept_name) VALUES ('d007','Human Resources');
+END
+
+BEGIN TRY
+    BEGIN TRANSACTION tx_consolidate;
+    UPDATE dbo.dept_emp_small
+    SET dept_no = (SELECT dept_no FROM dbo.departments WHERE dept_name = 'People Ops')
+    WHERE dept_no = (SELECT dept_no FROM dbo.departments WHERE dept_name = 'Human Resources')
+      AND to_date > CAST(GETDATE() AS DATE);
+
+    -- Archive old department (safe: only delete if no active mappings remain)
+    IF NOT EXISTS (SELECT 1 FROM dbo.dept_emp_small WHERE dept_no = 'd007' AND to_date > CAST(GETDATE() AS DATE))
+    BEGIN
+        DELETE FROM dbo.departments WHERE dept_name = 'Human Resources';
+        PRINT 'Archived Human Resources department';
+    END
+    ELSE
+    BEGIN
+        PRINT 'Cannot archive HR - active employees still present';
+    END
+
+    -- Verify
+    SELECT COUNT(*) AS active_hr_after
+    FROM dbo.dept_emp_small
+    WHERE dept_no = 'd007' AND to_date > CAST(GETDATE() AS DATE);
+
+    COMMIT TRANSACTION tx_consolidate;
+END TRY
+BEGIN CATCH
+    PRINT 'Consolidation failed: ' + ERROR_MESSAGE();
+    ROLLBACK;
+END CATCH;
+
+----------------------------------------------------------------
+-- REAL-WORLD SCENARIO 2: GDPR Data Purge (safe demo)
+----------------------------------------------------------------
+PRINT '--- REAL-WORLD SCENARIO 2: GDPR Deletion Demo (safe) ---';
+
+-- Create deletion_audit table
+CREATE TABLE dbo.deletion_audit (
+    emp_no INT PRIMARY KEY,
+    delete_date DATE
+);
+
+BEGIN TRY
+    BEGIN TRANSACTION tx_gdpr;
+
+    -- Record before deletion: choose rows with hire_date < '1990-01-01' (none in our dataset)
+    INSERT INTO dbo.deletion_audit (emp_no, delete_date)
+    SELECT emp_no, CAST(GETDATE() AS DATE)
+    FROM dbo.employee_sandbox
+    WHERE hire_date < '1990-01-01';
+
+    -- Delete those employees (none expected)
+    DELETE FROM dbo.employee_sandbox WHERE hire_date < '1990-01-01';
+
+    -- Verify
+    SELECT COUNT(*) AS remaining_old_hires FROM dbo.employee_sandbox WHERE hire_date < '1990-01-01';
+
+    COMMIT TRANSACTION tx_gdpr;
+END TRY
+BEGIN CATCH
+    PRINT 'GDPR purge failed: ' + ERROR_MESSAGE();
+    ROLLBACK;
+END CATCH;
+
+----------------------------------------------------------------
+-- FINAL PROGRESSION METRICS & SANITY CHECKS
+----------------------------------------------------------------
+PRINT '--- FINAL SANITY CHECKS ---';
+SELECT COUNT(*) AS total_employees FROM dbo.employee_sandbox;
+SELECT COUNT(*) AS total_salaries FROM dbo.salary_sandbox;
+SELECT COUNT(*) AS deletion_audit_count FROM dbo.deletion_audit;
+
+PRINT 'Script completed successfully.';
