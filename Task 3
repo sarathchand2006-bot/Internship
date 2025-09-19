@@ -1,0 +1,141 @@
+-- Drop tables if already exist (for clean run)
+IF OBJECT_ID('titles', 'U') IS NOT NULL DROP TABLE titles;
+IF OBJECT_ID('salaries', 'U') IS NOT NULL DROP TABLE salaries;
+IF OBJECT_ID('dept_manager', 'U') IS NOT NULL DROP TABLE dept_manager;
+IF OBJECT_ID('dept_emp', 'U') IS NOT NULL DROP TABLE dept_emp;
+IF OBJECT_ID('departments', 'U') IS NOT NULL DROP TABLE departments;
+IF OBJECT_ID('employees', 'U') IS NOT NULL DROP TABLE employees;
+
+-- 1) Create Employees Table
+CREATE TABLE employees (
+    emp_no INT PRIMARY KEY,
+    first_name VARCHAR(50),
+    last_name VARCHAR(50)
+);
+
+-- 2) Create Departments Table
+CREATE TABLE departments (
+    dept_no CHAR(4) PRIMARY KEY,
+    dept_name VARCHAR(50)
+);
+
+-- 3) Create Dept_Emp Table
+CREATE TABLE dept_emp (
+    emp_no INT,
+    dept_no CHAR(4),
+    from_date DATE,
+    to_date DATE,
+    FOREIGN KEY (emp_no) REFERENCES employees(emp_no),
+    FOREIGN KEY (dept_no) REFERENCES departments(dept_no)
+);
+
+-- 4) Create Dept_Manager Table
+CREATE TABLE dept_manager (
+    emp_no INT,
+    dept_no CHAR(4),
+    from_date DATE,
+    to_date DATE,
+    FOREIGN KEY (emp_no) REFERENCES employees(emp_no),
+    FOREIGN KEY (dept_no) REFERENCES departments(dept_no)
+);
+
+-- 5) Create Salaries Table
+CREATE TABLE salaries (
+    emp_no INT,
+    salary INT,
+    from_date DATE,
+    to_date DATE,
+    FOREIGN KEY (emp_no) REFERENCES employees(emp_no)
+);
+
+-- 6) Create Titles Table
+CREATE TABLE titles (
+    emp_no INT,
+    title VARCHAR(50),
+    from_date DATE,
+    to_date DATE,
+    FOREIGN KEY (emp_no) REFERENCES employees(emp_no)
+);
+
+-- Insert Employees (Indian names)
+INSERT INTO employees VALUES
+(10001, 'Arjun', 'Sharma'),
+(10002, 'Priya', 'Iyer'),
+(10003, 'Ravi', 'Patel'),
+(10004, 'Meera', 'Nair'),
+(10005, 'Karthik', 'Reddy');
+
+-- Insert Departments
+INSERT INTO departments VALUES
+('d001', 'Sales'),
+('d002', 'Development'),
+('d003', 'Production');
+
+-- Insert Dept_Emp mappings
+INSERT INTO dept_emp VALUES
+(10001, 'd002', '2020-01-01', '9999-01-01'),
+(10002, 'd001', '2019-01-01', '9999-01-01'),
+(10003, 'd003', '2021-05-01', '9999-01-01'),
+(10004, 'd002', '2018-05-01', '2020-01-01'),
+(10005, 'd001', '2017-03-01', '2021-03-01');
+
+-- Insert Dept_Manager data
+INSERT INTO dept_manager VALUES
+(10003, 'd003', '2019-01-01', '9999-01-01'),
+(10001, 'd002', '2018-01-01', '9999-01-01');
+
+-- Insert Salaries
+INSERT INTO salaries VALUES
+(10001, 90000, '2020-01-01', '9999-01-01'),
+(10002, 75000, '2019-01-01', '9999-01-01'),
+(10003, 60000, '2021-05-01', '9999-01-01'),
+(10004, 50000, '2018-05-01', '2020-01-01'),
+(10005, 45000, '2017-03-01', '2021-03-01');
+
+-- Insert Titles
+INSERT INTO titles VALUES
+(10001, 'Senior Engineer', '2020-01-01', '9999-01-01'),
+(10002, 'Sales Staff', '2019-01-01', '9999-01-01'),
+(10003, 'Production Staff', '2021-05-01', '9999-01-01');
+
+-------------------------------------------------------
+-- TASK 3 QUERIES
+-------------------------------------------------------
+
+-- 1) INNER JOIN: Employee - Department Mapping
+PRINT '--- INNER JOIN ---';
+SELECT e.emp_no, e.first_name, e.last_name, d.dept_name
+FROM employees e
+INNER JOIN dept_emp de ON e.emp_no = de.emp_no
+INNER JOIN departments d ON de.dept_no = d.dept_no;
+
+-- 2) LEFT JOIN: Show all employees even if no department
+PRINT '--- LEFT JOIN ---';
+SELECT e.emp_no, e.first_name, d.dept_name
+FROM employees e
+LEFT JOIN dept_emp de ON e.emp_no = de.emp_no
+LEFT JOIN departments d ON de.dept_no = d.dept_no;
+
+-- 3) UNION: Combine dept_emp and dept_manager data
+PRINT '--- UNION ---';
+SELECT emp_no, dept_no, from_date, to_date FROM dept_emp
+UNION
+SELECT emp_no, dept_no, from_date, to_date FROM dept_manager;
+
+-- 4) Correlated Subquery: Employees with salary above average
+PRINT '--- CORRELATED SUBQUERY ---';
+SELECT e.emp_no, e.first_name, s.salary
+FROM employees e
+JOIN salaries s ON e.emp_no = s.emp_no
+WHERE s.salary > (SELECT AVG(salary) FROM salaries);
+
+-- 5) DISTINCT: Unique job titles
+PRINT '--- DISTINCT TITLES ---';
+SELECT DISTINCT title FROM titles;
+
+-- 6) GROUP BY: Employee count per department
+PRINT '--- GROUP BY ---';
+SELECT d.dept_name, COUNT(de.emp_no) AS emp_count
+FROM departments d
+LEFT JOIN dept_emp de ON d.dept_no = de.dept_no
+GROUP BY d.dept_name;
